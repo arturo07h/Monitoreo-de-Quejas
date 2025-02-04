@@ -20,18 +20,10 @@ shp_mexico <- sf::read_sf("insumos/México_Estados/mexico_drv.shp")
 dataQuejas <- dataRaw
 
 shp_mexico <- shp_mexico |> 
-  fmutate(color = dplyr::case_when(
-    str_detect(drv,"Pacifico") ~ "#023e8a",
-    str_detect(drv,"Occidente") ~ "#d00000",
-    str_detect(drv,"Noreste") ~ "#2b2d42",
-    str_detect(drv,"Centro Norte") ~ "#3c6e71",
-    str_detect(drv,"Centro") ~ "#582f0e",
-    str_detect(drv,"Metro") ~ "#5c677d",
-    str_detect(drv,"Peninsula") ~ "#004b23",
-    str_detect(drv,"Sur") ~ "#463f3a",
-    str_detect(drv,"Sureste") ~ "#563152",
-    .default = NA
-  )) 
+  fmutate(drv = drv |> 
+            str_replace_all(c("Peninsula" = "Península")) |> 
+            str_remove_all("Direccion") |> 
+            str_squish())
 
 ## Vectores de filtros
 ## Direccipon
@@ -93,7 +85,6 @@ theme <- bs_theme(
   "input-border-color" = "#a6a6a6"
 )
 
-
 ui <- bootstrapPage(
   absolutePanel(
     top = 5,
@@ -149,8 +140,31 @@ server <- function(input, output){
     
   })
   
+  shp_reactivo <- reactive({
+    
+    if(input$dir == "Nacional"){
+      shp_mexico
+    }else{
+      shp_mexico |> fsubset(drv == input$dir)
+    }
+    
+  })
+  
   ## Renderizado de mapa como fondo
   output$map <- renderLeaflet({
+    
+    # browser()
+    if(input$dir == "Nacional"){
+      xmin <- 23.6345
+      ymax <- -102.5528
+    }else{
+      
+      dim <- shp_reactivo() |> sf::st_bbox()
+      ymax <- unique(dim$xmin)
+      xmin <- unique(dim$ymax)
+      
+    }
+    
     leaflet() |> 
       addTiles("http://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}.png",
                attribution = paste(
@@ -158,15 +172,33 @@ server <- function(input, output){
                  "&copy; <a href=\"http://cartodb.com/attributions\">CartoDB</a>"
                )) |> 
       addPolygons(
-        data = shp_mexico,
+        data = shp_reactivo(),
         color = "red",
-        fill = unique(shp_mexico$color),
-        fillColor = unique(shp_mexico$color),
         fillOpacity = 0.5,
         weight = 2
         ) |> 
-      setView(lat = 23.6345, lng = -102.5528, zoom = 5)
+      setView(lat = xmin , lng = ymax, zoom = 5)
   })
+  
+  # observeEvent(input$dir,{if (input$dir == "") {return()}
+  #   
+  #   country_bbox <- shp_reactivo() |> 
+  #     sf::st_bbox() |> 
+  #     as.list()
+  #   
+  #   leafletProxy("map") %>%
+  #     clearShapes() %>%
+  #     addPolygons(data = shp_reactivo(),
+  #                 color = "red",
+  #                 label = ~ ESTADO,
+  #                 fillOpacity = 0.5,
+  #                 weight = 2,
+  #                 popup = ~ paste("Estado:", ESTADO)) %>%
+  #     fitBounds(country_bbox$xmin,
+  #               country_bbox$ymin,
+  #               country_bbox$xmax,
+  #               country_bbox$ymax)
+  # })
   
   ## Gráficos
   
