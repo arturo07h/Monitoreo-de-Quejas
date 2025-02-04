@@ -14,8 +14,24 @@ Sys.setlocale("LC_TIME", "es_ES.UTF-8")
 dataRaw <- openxlsx2::read_xlsx("./data/quejas_clientes.xlsx") |> 
   tibble::as_tibble() |> janitor::clean_names()
 
+shp_mexico <- sf::read_sf("insumos/México_Estados/mexico_drv.shp")
+
 # Procesamiento de data ---------------------------------------------------
 dataQuejas <- dataRaw
+
+shp_mexico <- shp_mexico |> 
+  fmutate(color = dplyr::case_when(
+    str_detect(drv,"Pacifico") ~ "#023e8a",
+    str_detect(drv,"Occidente") ~ "#d00000",
+    str_detect(drv,"Noreste") ~ "#2b2d42",
+    str_detect(drv,"Centro Norte") ~ "#3c6e71",
+    str_detect(drv,"Centro") ~ "#582f0e",
+    str_detect(drv,"Metro") ~ "#5c677d",
+    str_detect(drv,"Peninsula") ~ "#004b23",
+    str_detect(drv,"Sur") ~ "#463f3a",
+    str_detect(drv,"Sureste") ~ "#563152",
+    .default = NA
+  )) 
 
 ## Vectores de filtros
 ## Direccipon
@@ -110,14 +126,13 @@ ui <- bootstrapPage(
     ),
     fluidRow(
       column(
-        1,
-        echarts4rOutput("graf_1_evo", height = '350px', width = '550px'),
-        echarts4rOutput("graf_2_grav", height = '350px', width = '550px')
+        4,
+        echarts4rOutput("graf_1_evo", height = '350px', width = '650px'),
+        echarts4rOutput("graf_2_grav", height = '400px', width = '800px')
       )
     )
   )
-  
-  )
+)
 
 server <- function(input, output){
   
@@ -128,23 +143,28 @@ server <- function(input, output){
     
   })
   
-  data_grav <- reactive({
+  data_tipQueja <- reactive({
     
-    data_gen_tipoQuej |> 
-      fsubset(direccion == input$dir) |> 
-      fselect(mes,gravedad,por) |> 
-      pivot(c("mes"),"por","gravedad",how = "wider")
+    data_gen_tipoQuej |> fsubset(direccion == input$dir)
     
   })
   
   ## Renderizado de mapa como fondo
   output$map <- renderLeaflet({
-    leaflet() %>%
+    leaflet() |> 
       addTiles("http://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}.png",
                attribution = paste(
                  "&copy; <a href=\"http://openstreetmap.org\">OpenStreetMap</a> contributors",
                  "&copy; <a href=\"http://cartodb.com/attributions\">CartoDB</a>"
-               ))  %>%
+               )) |> 
+      addPolygons(
+        data = shp_mexico,
+        color = "red",
+        fill = unique(shp_mexico$color),
+        fillColor = unique(shp_mexico$color),
+        fillOpacity = 0.5,
+        weight = 2
+        ) |> 
       setView(lat = 23.6345, lng = -102.5528, zoom = 5)
   })
   
@@ -162,39 +182,26 @@ server <- function(input, output){
       e_legend(show = FALSE) |> 
       e_color(color = "#853c3c") |> 
       e_title(text = tit) |> 
-      e_tooltip(trigger = "axis")
+      e_tooltip(trigger = "axis") |> 
+      e_theme("inspired")
       
   })
   
   output$graf_2_grav <- renderEcharts4r({
     
-    data_grav() |> 
-      fmutate(
-        mes = as.character(mes),
-        total = Baja + Media + Alta,  # Sumar total de cada mes
-        Baja = Baja / total,          # Normalizar valores
-        Media = Media / total,
-        Alta = Alta / total
-      ) |> 
-      e_chart(x = mes) |> 
-      e_bar(Baja, stack = "grp", name = "Baja") |> 
-      e_bar(Media, stack = "grp", name = "Media") |> 
-      e_bar(Alta, stack = "grp", name = "Alta") |> 
-      e_tooltip(
-        trigger = "axis",
-        formatter = JS("function(params) {
-          let tooltip = '<strong>' + params[0].axisValue + '</strong><br/>';  // Fecha en negritas
-          params.forEach(function(item) {
-            if (item.value !== null) {  // Asegura que el valor no sea null
-              tooltip += item.marker + ' <strong>' + item.seriesName + '</strong>: ' 
-                       + (item.value * 100).toFixed(1) + '%<br/>';
-            }
-          });
-          return tooltip;
-        }")
-      ) |> 
-      e_legend(bottom = 0) |> 
-      e_y_axis(min = 0, max = 1)
+    tit <- paste0("Principales motivos de queja acumulado, ",funique( data_tipQueja()$direccion))
+    
+    data_tipQueja() |> 
+      dplyr::arrange(N) |> 
+      dplyr::top_n(5,N) |> 
+      fmutate(motivo_queja = str_wrap(motivo_queja, width = 10)) |>
+      e_chart(x = motivo_queja) |> 
+      e_bar(serie = N) |> 
+      e_flip_coords() |> 
+      e_legend(show = FALSE) |> 
+      e_color(color = "#853c3c") |> 
+      e_title(text = tit) |> 
+      e_theme("inspired")
     
   })
 }
