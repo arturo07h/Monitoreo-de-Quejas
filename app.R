@@ -19,6 +19,10 @@ shp_mexico <- sf::read_sf("insumos/México_Estados/mexico_drv.shp")
 # Procesamiento de data ---------------------------------------------------
 dataQuejas <- dataRaw
 
+## Relacion DRV, SDRV y OS
+rel_ubic <- dataQuejas |> fcount(direccion,subdireccion,sucursal,latitud,longitud,sort = T) |> 
+  fselect(-N)
+
 shp_mexico <- shp_mexico |> 
   fmutate(drv = drv |> 
             str_replace_all(c("Peninsula" = "Península")) |> 
@@ -79,6 +83,24 @@ data2_tipoQuej <- data1_tipoQuej |>
 
 data_gen_tipoQuej <- rowbind(data1_tipoQuej,data2_tipoQuej)
 
+## Info por Sucursal
+data3_info_suc <- dataQuejas |> 
+  fcount(sucursal,mes,gravedad,sort = T) |> 
+  fgroup_by(sucursal,mes) |> 
+  fmutate(suma = fsum(N)) |> 
+  fungroup() |> 
+  fmutate(por = N / suma)
+
+
+data3_info_suc <- data3_info_suc |> 
+  complete(sucursal, mes, gravedad) %>%
+  dplyr::mutate(dplyr::across(c(N, suma, por), ~ dplyr::case_when(
+    is.na(.) ~ 0, 
+    TRUE ~ .)))
+
+data_gen_infoSuc <- join(x = data3_info_suc,y = rel_ubic,on = "sucursal",how = "left") |> 
+  fmutate(fecha = format(mes,"%B %Y"))
+
 # Shiny -------------------------------------------------------------------
 theme <- bs_theme(
   bg = "#000000", fg = "#B8BCC2",
@@ -119,8 +141,8 @@ ui <- page_fillable(
     top = 10, 
     left = 60,
     draggable = TRUE, 
-    selectInput("dir", "Dirección:", choices = dir_vect),
-    
+    selectInput("dir", "Dirección:", choices = dir_vect,selected = "Nacional"),
+    selectInput("fecha", "Mes de consulta:", choices = vect_fechas,selected = "enero 2025"),
     layout_columns(
       col_widths = c(12,12),
       row_heights = c(1,1),
@@ -136,11 +158,18 @@ server <- function(input, output){
   data_evo <- reactive({
     data_gen_evo |> fsubset(direccion == input$dir)
   })
-
+  ## Data tipo de queja
   data_tipQueja <- reactive({
     data_gen_tipoQuej |> fsubset(direccion == input$dir)
   })
+  
+  ## Data por sucursal
+  data_suc <- reactive({
+    data_gen_infoSuc |> fsubset(direccion == input$dir) |> 
+      fsubset(fecha == input$fecha)
+  })
 
+  ## SHP reactivo
   shp_reactivo <- reactive({
     if(input$dir == "Nacional"){
       shp_mexico
@@ -168,7 +197,9 @@ server <- function(input, output){
         ) 
   })
   
-  observeEvent(input$dir,{if (input$dir == "Nacional") {return()}
+  observeEvent(input$dir,{
+    
+    if (input$dir == "Nacional") {return()}
 
     zona_lat <- sf::st_coordinates(shp_reactivo()) |> as_tibble()
     
@@ -178,23 +209,23 @@ server <- function(input, output){
     flat1 <- fmin(zona_lat$Y)
     flat2 <- fmax(zona_lat$Y)
     
-    # browser()
-    leafletProxy("map") %>%
-      clearShapes() %>%
+    leafletProxy("map") |> 
+      clearShapes() |> 
       addPolygons(data = shp_reactivo(),
                   color = "red",
                   label = ~ ESTADO,
                   fillOpacity = 0.5,
                   weight = 2,
-                  popup = ~ paste("Estado:", ESTADO)) %>%
-      
+                  popup = ~ paste("Estado:", ESTADO)) |> 
+      addMarkers(data = data_suc(),
+                 lng = data_suc()$longitud,
+                 lat = data_suc()$latitud) |> 
       flyToBounds(
         lng1 = flng1,
         lng2 = flng2,
         lat1 = flat1,
         lat2 = flat2
       )
-      
   })
   
   ## Gráficos
