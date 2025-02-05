@@ -88,16 +88,15 @@ theme <- bs_theme(
 cards <- list(
   card(
     full_screen = T,
-    # style = "width: 300px; max-width: 800px; background-color: rgba(255, 255, 255, 0.5);",
     echarts4rOutput("graf_1_evo",height = '350px', width = '650px')
   ),
   card(
     full_screen = T,
-    # style = "width: 300px; max-width: 800px; background-color: rgba(255, 255, 255, 0.5);",
     echarts4rOutput("graf_2_grav",height = '350px', width = '650px')
   )
 )
 
+## Ui
 ui <- page_fillable(
   padding = 0,
   theme = theme,
@@ -114,7 +113,7 @@ ui <- page_fillable(
     }
   ")),
   
-  leafletOutput("map", width = "100%", height = "100%"),
+  leafletOutput("map",width = "100%",height = "100%"),
   
   absolutePanel(
     top = 10, 
@@ -130,8 +129,7 @@ ui <- page_fillable(
   )
 )
 
-
-
+## Server
 server <- function(input, output){
   
   # Data evolución
@@ -154,18 +152,8 @@ server <- function(input, output){
   ## Renderizado de mapa como fondo
   output$map <- renderLeaflet({
     
-    # browser()
-    # if(input$dir == "Nacional"){
-    #   xmin <- 23.6345
-    #   ymax <- -102.5528
-    # }else{
-    #   
-    #   dim <- shp_reactivo() |> sf::st_bbox()
-    #   ymax <- unique(dim$xmin)
-    #   xmin <- unique(dim$ymax)
-    #   
-    # }
-    # 
+    if (input$dir == "Nacional") {return}
+    
     leaflet() |> 
       addTiles("http://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}.png",
                attribution = paste(
@@ -177,8 +165,36 @@ server <- function(input, output){
         color = "red",
         fillOpacity = 0.5,
         weight = 2
-        ) |>
-      setView(lat = 23.6345 , lng = -102.5528, zoom = 5)
+        ) 
+  })
+  
+  observeEvent(input$dir,{if (input$dir == "Nacional") {return()}
+
+    zona_lat <- sf::st_coordinates(shp_reactivo()) |> as_tibble()
+    
+    flng1 <- fmin(zona_lat$X)
+    flng2 <- fmax(zona_lat$X)
+    
+    flat1 <- fmin(zona_lat$Y)
+    flat2 <- fmax(zona_lat$Y)
+    
+    # browser()
+    leafletProxy("map") %>%
+      clearShapes() %>%
+      addPolygons(data = shp_reactivo(),
+                  color = "red",
+                  label = ~ ESTADO,
+                  fillOpacity = 0.5,
+                  weight = 2,
+                  popup = ~ paste("Estado:", ESTADO)) %>%
+      
+      flyToBounds(
+        lng1 = flng1,
+        lng2 = flng2,
+        lat1 = flat1,
+        lat2 = flat2
+      )
+      
   })
   
   ## Gráficos
