@@ -85,85 +85,74 @@ theme <- bs_theme(
   "input-border-color" = "#a6a6a6"
 )
 
-ui <- bootstrapPage(
-  absolutePanel(
-    top = 5,
-    height = 5,
-    right = 100,
-    
-    style = "z-index:500; text-align: right;",
-    
-    tags$h2("Monitoreo de Quejas")
+cards <- list(
+  card(
+    full_screen = T,
+    echarts4rOutput("graf_1_evo",height = '350px', width = '650px')
   ),
+  card(
+    full_screen = T,
+    echarts4rOutput("graf_2_grav",height = '350px', width = '650px')
+  )
+)
+
+## Ui
+ui <- page_fillable(
+  padding = 0,
   theme = theme,
+  fillable_mobile = TRUE,
   
   tags$style(type = "text/css", "html, body {width:100%;height:100%}"),
   
-  leafletOutput("map", width = "100%", height = "100%"),
+  tags$style(HTML("
+    .card {
+      background-color: rgba(255, 255, 255, 0) !important; /* Fondo semitransparente */
+      border: none; /* Opcional: quitar bordes */
+      width: 500px; max-width: 800px;
+      box-shadow: none; /* Opcional: quitar sombra */
+    }
+  ")),
+  
+  leafletOutput("map",width = "100%",height = "100%"),
   
   absolutePanel(
     top = 10, 
-    left = 50, 
+    left = 60,
+    draggable = TRUE, 
+    selectInput("dir", "Dirección:", choices = dir_vect),
     
-    fluidRow(
-      column(
-        4,
-        selectInput("mes","Mes:",choices = vect_fechas,selected = max_Date)
-      ),
-      column(
-        4,
-        selectInput("dir","Dirección:",choices = dir_vect)
-      )
-    ),
-    fluidRow(
-      column(
-        4,
-        echarts4rOutput("graf_1_evo", height = '350px', width = '650px'),
-        echarts4rOutput("graf_2_grav", height = '400px', width = '800px')
-      )
+    layout_columns(
+      col_widths = c(12,12),
+      row_heights = c(1,1),
+      !!!cards
     )
   )
 )
 
+## Server
 server <- function(input, output){
   
-  ## Data evolución
+  # Data evolución
   data_evo <- reactive({
-    
     data_gen_evo |> fsubset(direccion == input$dir)
-    
   })
-  
+
   data_tipQueja <- reactive({
-    
     data_gen_tipoQuej |> fsubset(direccion == input$dir)
-    
   })
-  
+
   shp_reactivo <- reactive({
-    
     if(input$dir == "Nacional"){
       shp_mexico
     }else{
       shp_mexico |> fsubset(drv == input$dir)
     }
-    
   })
   
   ## Renderizado de mapa como fondo
   output$map <- renderLeaflet({
     
-    # browser()
-    if(input$dir == "Nacional"){
-      xmin <- 23.6345
-      ymax <- -102.5528
-    }else{
-      
-      dim <- shp_reactivo() |> sf::st_bbox()
-      ymax <- unique(dim$xmin)
-      xmin <- unique(dim$ymax)
-      
-    }
+    if (input$dir == "Nacional") {return}
     
     leaflet() |> 
       addTiles("http://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}.png",
@@ -176,65 +165,73 @@ server <- function(input, output){
         color = "red",
         fillOpacity = 0.5,
         weight = 2
-        ) |> 
-      setView(lat = xmin , lng = ymax, zoom = 5)
+        ) 
   })
   
-  # observeEvent(input$dir,{if (input$dir == "") {return()}
-  #   
-  #   country_bbox <- shp_reactivo() |> 
-  #     sf::st_bbox() |> 
-  #     as.list()
-  #   
-  #   leafletProxy("map") %>%
-  #     clearShapes() %>%
-  #     addPolygons(data = shp_reactivo(),
-  #                 color = "red",
-  #                 label = ~ ESTADO,
-  #                 fillOpacity = 0.5,
-  #                 weight = 2,
-  #                 popup = ~ paste("Estado:", ESTADO)) %>%
-  #     fitBounds(country_bbox$xmin,
-  #               country_bbox$ymin,
-  #               country_bbox$xmax,
-  #               country_bbox$ymax)
-  # })
+  observeEvent(input$dir,{if (input$dir == "Nacional") {return()}
+
+    zona_lat <- sf::st_coordinates(shp_reactivo()) |> as_tibble()
+    
+    flng1 <- fmin(zona_lat$X)
+    flng2 <- fmax(zona_lat$X)
+    
+    flat1 <- fmin(zona_lat$Y)
+    flat2 <- fmax(zona_lat$Y)
+    
+    # browser()
+    leafletProxy("map") %>%
+      clearShapes() %>%
+      addPolygons(data = shp_reactivo(),
+                  color = "red",
+                  label = ~ ESTADO,
+                  fillOpacity = 0.5,
+                  weight = 2,
+                  popup = ~ paste("Estado:", ESTADO)) %>%
+      
+      flyToBounds(
+        lng1 = flng1,
+        lng2 = flng2,
+        lat1 = flat1,
+        lat2 = flat2
+      )
+      
+  })
   
   ## Gráficos
   
   ### Evolución de quejas
   
   output$graf_1_evo <- renderEcharts4r({
-    
+
     tit <- paste0("Evolución mensual, ",funique(data_evo()$direccion))
-    
-    data_evo() |> 
-      e_chart(x = mes) |> 
-      e_area(serie = N) |> 
-      e_legend(show = FALSE) |> 
-      e_color(color = "#853c3c") |> 
-      e_title(text = tit) |> 
-      e_tooltip(trigger = "axis") |> 
+
+    data_evo() |>
+      e_chart(x = mes) |>
+      e_area(serie = N) |>
+      e_legend(show = FALSE) |>
+      e_color(color = "#853c3c") |>
+      e_title(text = tit) |>
+      e_tooltip(trigger = "axis") |>
       e_theme("inspired")
-      
+
   })
-  
+
   output$graf_2_grav <- renderEcharts4r({
-    
+
     tit <- paste0("Principales motivos de queja acumulado, ",funique( data_tipQueja()$direccion))
-    
-    data_tipQueja() |> 
-      dplyr::arrange(N) |> 
-      dplyr::top_n(5,N) |> 
+
+    data_tipQueja() |>
+      dplyr::arrange(N) |>
+      dplyr::top_n(5,N) |>
       fmutate(motivo_queja = str_wrap(motivo_queja, width = 10)) |>
-      e_chart(x = motivo_queja) |> 
-      e_bar(serie = N) |> 
-      e_flip_coords() |> 
-      e_legend(show = FALSE) |> 
-      e_color(color = "#853c3c") |> 
-      e_title(text = tit) |> 
+      e_chart(x = motivo_queja) |>
+      e_bar(serie = N) |>
+      e_flip_coords() |>
+      e_legend(show = FALSE) |>
+      e_color(color = "#853c3c") |>
+      e_title(text = tit) |>
       e_theme("inspired")
-    
+
   })
 }
 
