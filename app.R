@@ -111,58 +111,41 @@ cards_graf <- list(
   card(
     full_screen = F,
     card_body(
-      echarts4rOutput("graf_1_evo",height = '300px', width = '550px')
+      echarts4rOutput("graf_1_evo",height = '50px', width = '500px')
     )
   ),
   card(
     full_screen = T,
     card_body(
-      echarts4rOutput("graf_2_grav",height = '300px', width = '650px')
+      echarts4rOutput("graf_2_grav",height = '50px', width = '500px')
+    )
+  ),
+  card(
+    full_screen = T,
+    card_body(
+      leafletOutput("map",width = "100%",height = "50%"),
     )
   )
 )
 
 ## Ui
-ui <- page_fillable(
-  padding = 0,
+ui <- page_sidebar(
+  
+  title = "Monitoreo de quejas",
+  
   theme = theme,
-  fillable_mobile = TRUE,
   
-  tags$style(type = "text/css", "html, body {width:100%;height:100%}"),
-  
-  tags$style(HTML("
-    .card {
-      background-color: rgba(255, 255, 255, 0) !important; /* Fondo semitransparente */
-      border: none; /* Opcional: quitar bordes */
-      width: 600px; max-width: 900px;
-      box-shadow: none; /* Opcional: quitar sombra */
-    }
-  ")),
-  
-  leafletOutput("map",width = "100%",height = "100%"),
-  
-  absolutePanel(
-    top = 10, 
-    left = 80, 
-    tags$h2("Monitoreo de quejas"),
-    fluidRow(
-      column(
-        width = 5,
-        selectInput("dir", "Dirección:", width = 180, choices = dir_vect,selected = "Nacional")
-        ),
-      selectInput("fecha", "Mes de consulta:", width = 180, choices = vect_fechas,selected = "enero 2025")
-    )
+  sidebar = sidebar(
+   
+     title = "Control de regiones y fechas",
+    
+    selectInput("dir", "Dirección:", width = 180, choices = dir_vect,selected = "Nacional"),
+    selectInput("fecha", "Mes de consulta:", width = 180, choices = vect_fechas,selected = "enero 2025")
+    
   ),
-
-  absolutePanel(
-    top = 10, 
-    right = -50,
-    layout_columns(
-      col_widths = c(12,12),
-      
-      !!!cards_graf
-    )
-  )
+  
+  layout_columns(cards_graf[[1]],cards_graf[[2]]),
+  layout_columns(cards_graf[[3]])
 )
 
 ## Server
