@@ -107,14 +107,18 @@ theme <- bs_theme(
   "input-border-color" = "#a6a6a6"
 )
 
-cards <- list(
+cards_graf <- list(
   card(
-    full_screen = T,
-    echarts4rOutput("graf_1_evo",height = '350px', width = '650px')
+    full_screen = F,
+    card_body(
+      echarts4rOutput("graf_1_evo",height = '300px', width = '550px')
+    )
   ),
   card(
     full_screen = T,
-    echarts4rOutput("graf_2_grav",height = '350px', width = '650px')
+    card_body(
+      echarts4rOutput("graf_2_grav",height = '300px', width = '650px')
+    )
   )
 )
 
@@ -130,7 +134,7 @@ ui <- page_fillable(
     .card {
       background-color: rgba(255, 255, 255, 0) !important; /* Fondo semitransparente */
       border: none; /* Opcional: quitar bordes */
-      width: 500px; max-width: 800px;
+      width: 600px; max-width: 900px;
       box-shadow: none; /* Opcional: quitar sombra */
     }
   ")),
@@ -139,14 +143,24 @@ ui <- page_fillable(
   
   absolutePanel(
     top = 10, 
-    left = 60,
-    draggable = TRUE, 
-    selectInput("dir", "Dirección:", choices = dir_vect,selected = "Nacional"),
-    selectInput("fecha", "Mes de consulta:", choices = vect_fechas,selected = "enero 2025"),
+    left = 80, 
+    tags$h2("Monitoreo de quejas"),
+    fluidRow(
+      column(
+        width = 5,
+        selectInput("dir", "Dirección:", width = 180, choices = dir_vect,selected = "Nacional")
+        ),
+      selectInput("fecha", "Mes de consulta:", width = 180, choices = vect_fechas,selected = "enero 2025")
+    )
+  ),
+
+  absolutePanel(
+    top = 10, 
+    right = -50,
     layout_columns(
       col_widths = c(12,12),
-      row_heights = c(1,1),
-      !!!cards
+      
+      !!!cards_graf
     )
   )
 )
@@ -187,8 +201,8 @@ server <- function(input, output){
       addTiles("http://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}.png",
                attribution = paste(
                  "&copy; <a href=\"http://openstreetmap.org\">OpenStreetMap</a> contributors",
-                 "&copy; <a href=\"http://cartodb.com/attributions\">CartoDB</a>"
-               )) |> 
+                 "&copy; <a href=\"http://cartodb.com/attributions\">CartoDB</a>")
+               ) |> 
       addPolygons(
         data = shp_reactivo(),
         color = "red",
@@ -201,6 +215,7 @@ server <- function(input, output){
     
     if (input$dir == "Nacional") {return()}
 
+    ## Polígonos
     zona_lat <- sf::st_coordinates(shp_reactivo()) |> as_tibble()
     
     flng1 <- fmin(zona_lat$X)
@@ -208,6 +223,16 @@ server <- function(input, output){
     
     flat1 <- fmin(zona_lat$Y)
     flat2 <- fmax(zona_lat$Y)
+  
+    # browser()
+    data_suc_resumen <- data_suc() %>%
+      fgroup_by(sucursal, fecha, longitud, latitud) %>%
+      fsummarise(
+        suma_total = sum(N, na.rm = TRUE),
+        Alta = scales::percent(sum(por[gravedad == "Alta"], na.rm = TRUE), accuracy = 1),
+        Media = scales::percent(sum(por[gravedad == "Media"], na.rm = TRUE), accuracy = 1),
+        Baja = scales::percent(sum(por[gravedad == "Baja"], na.rm = TRUE), accuracy = 1)) |> 
+      fungroup()
     
     leafletProxy("map") |> 
       clearShapes() |> 
@@ -217,9 +242,19 @@ server <- function(input, output){
                   fillOpacity = 0.5,
                   weight = 2,
                   popup = ~ paste("Estado:", ESTADO)) |> 
-      addMarkers(data = data_suc(),
-                 lng = data_suc()$longitud,
-                 lat = data_suc()$latitud) |> 
+      addMarkers(
+        data = data_suc_resumen,
+        lng = ~longitud,
+        lat = ~latitud,
+        popup = ~paste0(
+          "<b>Sucursal: </b>", sucursal, "<br>",
+          "<b>Mes de consulta: </b>", fecha, "<br>",
+          "<b>Total de quejas mensuales: </b>", suma_total, "<br>",
+          "<b>Gravedad</b><br>",
+          fifelse(Alta != "0%", paste0("<b>Alta: </b>", Alta, "<br>"), paste0("<b>Alta: </b>","0%", "<br>")),
+          fifelse(Media != "0%", paste0("<b>Media: </b>", Media, "<br>"), paste0("<b>Media: </b>","0%", "<br>")),
+          fifelse(Baja != "0%", paste0("<b>Baja: </b>", Baja), paste0("<b>Baja: </b>","0%", "<br>"))
+        )) |> 
       flyToBounds(
         lng1 = flng1,
         lng2 = flng2,
@@ -240,10 +275,14 @@ server <- function(input, output){
       e_chart(x = mes) |>
       e_area(serie = N) |>
       e_legend(show = FALSE) |>
-      e_color(color = "#853c3c") |>
+      e_color(color = "#606c38") |>
       e_title(text = tit) |>
       e_tooltip(trigger = "axis") |>
-      e_theme("inspired")
+      e_theme("cool")|> 
+      e_datazoom(
+        type = "slider",
+        startValue = "2024-01-01"
+      )
 
   })
 
@@ -259,11 +298,12 @@ server <- function(input, output){
       e_bar(serie = N) |>
       e_flip_coords() |>
       e_legend(show = FALSE) |>
-      e_color(color = "#853c3c") |>
+      e_color(color = "#606c38") |>
       e_title(text = tit) |>
-      e_theme("inspired")
+      e_theme("cool")
 
   })
 }
-
+"#ff715e"
+"#ffaf51"
 shinyApp(ui,server)
